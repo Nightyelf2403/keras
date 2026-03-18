@@ -4150,8 +4150,10 @@ def vsplit(x, indices_or_sections):
 
 
 def vectorize(pyfunc, *, excluded=None, signature=None):
-    raise NotImplementedError(
-        "`vectorize` is not supported with openvino backend"
+    return np.vectorize(
+        pyfunc,
+        excluded=excluded or (),
+        signature=signature,
     )
 
 
@@ -4223,14 +4225,39 @@ def true_divide(x1, x2):
 
 
 def power(x1, x2):
-    element_type = None
-    if isinstance(x1, OpenVINOKerasTensor):
-        element_type = x1.output.get_element_type()
-    if isinstance(x2, OpenVINOKerasTensor):
-        element_type = x2.output.get_element_type()
-    x1 = get_ov_output(x1, element_type)
-    x2 = get_ov_output(x2, element_type)
+    t1 = (
+        ov_to_keras_type(x1.get_element_type())
+        if isinstance(x1, ov.Output)
+        else getattr(x1, "dtype", type(x1))
+    )
+    t2 = (
+        ov_to_keras_type(x2.get_element_type())
+        if isinstance(x2, ov.Output)
+        else getattr(x2, "dtype", type(x2))
+    )
+
+    result_keras = dtypes.result_type(t1, t2)
+
+    if result_keras in (
+        "int8",
+        "int16",
+        "int32",
+        "int64",
+        "uint8",
+        "uint16",
+        "uint32",
+        "uint64",
+        "bool",
+    ):
+        result_keras = config.floatx()
+
+    target_type = OPENVINO_DTYPES[result_keras]
+
+    x1 = get_ov_output(x1, target_type)
+    x2 = get_ov_output(x2, target_type)
+
     x1, x2 = _align_operand_types(x1, x2, "power()")
+
     return OpenVINOKerasTensor(ov_opset.power(x1, x2).output(0))
 
 
